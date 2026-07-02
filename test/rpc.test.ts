@@ -21,7 +21,7 @@ afterEach(() => {
 
 describe("RpcClient failover", () => {
   it("uses the primary endpoint when healthy", async () => {
-    const fetchMock = vi.fn(async () => okStatus(100));
+    const fetchMock = vi.fn(async (_url: string) => okStatus(100));
     vi.stubGlobal("fetch", fetchMock);
 
     const rpc = new RpcClient([PRIMARY, FALLBACK]);
