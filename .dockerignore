@@ -1,0 +1,12 @@
+node_modules
+dist
+data
+.env
+state.json
+subscribers.json
+test
+*.md
+.gitignore
+.dockerignore
+Dockerfile
+docker-compose.yml
