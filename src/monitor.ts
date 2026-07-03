@@ -7,7 +7,7 @@ import { ZigWsClient } from "./wsClient.js";
 import { parseTxToAlerts } from "./txParser.js";
 import { formatAlert } from "./alerts.js";
 import type { Alert } from "./types.js";
-import type { Notifier } from "./telegram.js";
+import type { Notifier, WalletBalance } from "./telegram.js";
 
 export class StakingMonitor {
   private readonly rpc: RpcClient;
@@ -106,6 +106,18 @@ export class StakingMonitor {
         `[status] live at block ${this.processor.checkpoint}, backfill verified through ${this.backfiller.cursor}`,
       );
     }, 60_000).unref();
+  }
+
+  async getBalances(): Promise<WalletBalance[]> {
+    return Promise.all(
+      [...this.wallets].map(async (wallet): Promise<WalletBalance> => {
+        try {
+          return { wallet, amount: await this.rpc.getBalance(wallet) };
+        } catch (e) {
+          return { wallet, amount: { error: `lookup failed: ${String(e)}` } };
+        }
+      }),
+    );
   }
 
   stop(): void {

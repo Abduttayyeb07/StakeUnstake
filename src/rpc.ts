@@ -1,3 +1,4 @@
+import { QueryBalanceRequest, QueryBalanceResponse } from "cosmjs-types/cosmos/bank/v1beta1/query.js";
 import type { TxResult } from "./types.js";
 
 interface JsonRpcEnvelope<T> {
@@ -136,5 +137,23 @@ export class RpcClient {
         events: r.events ?? [],
       })),
     };
+  }
+
+  /**
+   * Query a bank module balance through Tendermint's generic abci_query,
+   * so it goes through the same endpoints/failover as everything else
+   * instead of needing a separate LCD/REST dependency.
+   */
+  async getBalance(address: string, denom = "uzig"): Promise<string> {
+    const data = QueryBalanceRequest.encode({ address, denom }).finish();
+    const hex = Buffer.from(data).toString("hex");
+    const result = await this.get<{
+      response: { code: number; log?: string; value: string | null };
+    }>(`abci_query?path="/cosmos.bank.v1beta1.Query/Balance"&data=0x${hex}`);
+    const { code, log, value } = result.response;
+    if (code !== 0) throw new Error(`abci_query Balance failed: ${log ?? code}`);
+    if (!value) return "0";
+    const decoded = QueryBalanceResponse.decode(Buffer.from(value, "base64"));
+    return decoded.balance?.amount ?? "0";
   }
 }

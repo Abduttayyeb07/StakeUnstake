@@ -46,7 +46,17 @@ npm run dev
 
 Without a `TELEGRAM_BOT_TOKEN`, alerts print to the console instead — useful
 for a dry run. With a token, users subscribe by sending `/start` to the bot
-(`/stop` unsubscribes, `/status` shows subscriber count).
+(`/stop` unsubscribes, `/status` shows subscriber count, `/balances` shows
+each tracked wallet's live ZIG balance).
+
+**How `/balances` works:** it queries the bank module's `Balance` gRPC method
+through Tendermint's generic `abci_query` RPC endpoint — the same endpoints
+(with the same failover) the rest of the bot already uses, so no extra LCD/REST
+dependency is needed. The request is a protobuf-encoded `QueryBalanceRequest`
+sent as `abci_query?path="/cosmos.bank.v1beta1.Query/Balance"&data=0x<hex>`;
+the response's base64 `value` is decoded back into a `QueryBalanceResponse` to
+read `balance.amount` (uzig), then formatted the same way as everywhere else
+(÷1,000,000 → ZIG).
 
 ## Commands
 

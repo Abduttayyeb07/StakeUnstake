@@ -7,11 +7,15 @@ async function main(): Promise<void> {
 
   let notifier: Notifier;
   let telegram: TelegramNotifier | null = null;
+  // monitor depends on notifier, but /balances on the bot depends on monitor —
+  // bind the callback to a not-yet-created monitor and fill it in below
+  let monitor: StakingMonitor;
   if (config.telegramBotToken) {
     telegram = new TelegramNotifier(
       config.telegramBotToken,
       config.telegramChatIds,
       config.subscribersFile,
+      () => monitor.getBalances(),
     );
     await telegram.start();
     notifier = telegram;
@@ -21,7 +25,7 @@ async function main(): Promise<void> {
     console.warn("[main] TELEGRAM_BOT_TOKEN not set — alerts will print to console");
   }
 
-  const monitor = new StakingMonitor(config, notifier);
+  monitor = new StakingMonitor(config, notifier);
   await monitor.start();
 
   const shutdown = (signal: string) => {
