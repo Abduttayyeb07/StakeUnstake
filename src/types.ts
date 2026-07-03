@@ -69,4 +69,10 @@ export type Alert =
       dstValidator: string;
       amount: Coin;
       completionTime?: string;
+    })
+  | (AlertBase & {
+      kind: "withdraw_reward";
+      delegator: string;
+      validator: string;
+      amounts: Coin[];
     });

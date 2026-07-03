@@ -84,5 +84,13 @@ export function formatAlert(alert: Alert, explorerTxUrl: string): string {
         footer
       );
     }
+    case "withdraw_reward":
+      return (
+        `🎁 <b>${walletLabel} — Rewards Claimed</b>\n` +
+        `Delegator: <code>${escapeHtml(alert.delegator)}</code>\n` +
+        `Validator: <code>${escapeHtml(alert.validator)}</code>\n` +
+        `Amount: <b>${escapeHtml(formatCoins(alert.amounts))}</b>` +
+        footer
+      );
   }
 }

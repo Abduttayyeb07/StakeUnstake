@@ -210,6 +210,106 @@ describe("MsgBeginRedelegate", () => {
   });
 });
 
+describe("MsgWithdrawDelegatorReward", () => {
+  const DISTRIBUTION_MODULE = "zig1jv65s3grqf6v6jl3dp4t6c9t9rk99cd8x4pwth";
+
+  it("emits a withdraw_reward alert using the amount from the raw withdraw_rewards event", () => {
+    // modeled on a real ZigChain tx: block 10132187, hash 1BEA3621...
+    const result = txResult([
+      {
+        type: "transfer",
+        attributes: [
+          { key: "recipient", value: WALLET },
+          { key: "sender", value: DISTRIBUTION_MODULE },
+          { key: "amount", value: "368006636uzig" },
+          { key: "msg_index", value: "0" },
+        ],
+      },
+      {
+        type: "withdraw_rewards",
+        attributes: [
+          { key: "amount", value: "368006636uzig" },
+          { key: "validator", value: VALIDATOR },
+          { key: "delegator", value: WALLET },
+          { key: "msg_index", value: "0" },
+        ],
+      },
+    ]);
+    const alerts = parse(buildTxBase64([msgs.withdrawReward(WALLET, VALIDATOR)]), result);
+
+    expect(alerts).toHaveLength(1); // no duplicate generic inflow alert
+    const a = alerts[0];
+    expect(a.kind).toBe("withdraw_reward");
+    if (a.kind !== "withdraw_reward") return;
+    expect(a.delegator).toBe(WALLET);
+    expect(a.validator).toBe(VALIDATOR);
+    expect(a.amounts).toEqual([{ denom: "uzig", amount: "368006636" }]);
+  });
+
+  it("matches each claim to its own validator/amount in a multi-message claim-all tx", () => {
+    const result = txResult([
+      {
+        type: "transfer",
+        attributes: [
+          { key: "recipient", value: WALLET },
+          { key: "sender", value: DISTRIBUTION_MODULE },
+          { key: "amount", value: "1000000uzig" },
+          { key: "msg_index", value: "0" },
+        ],
+      },
+      {
+        type: "withdraw_rewards",
+        attributes: [
+          { key: "amount", value: "1000000uzig" },
+          { key: "validator", value: VALIDATOR },
+          { key: "msg_index", value: "0" },
+        ],
+      },
+      {
+        type: "transfer",
+        attributes: [
+          { key: "recipient", value: WALLET },
+          { key: "sender", value: DISTRIBUTION_MODULE },
+          { key: "amount", value: "2000000uzig" },
+          { key: "msg_index", value: "1" },
+        ],
+      },
+      {
+        type: "withdraw_rewards",
+        attributes: [
+          { key: "amount", value: "2000000uzig" },
+          { key: "validator", value: VALIDATOR2 },
+          { key: "msg_index", value: "1" },
+        ],
+      },
+    ]);
+    const alerts = parse(
+      buildTxBase64([
+        msgs.withdrawReward(WALLET, VALIDATOR),
+        msgs.withdrawReward(WALLET, VALIDATOR2),
+      ]),
+      result,
+    );
+
+    expect(alerts).toHaveLength(2);
+    expect(alerts[0]).toMatchObject({
+      kind: "withdraw_reward",
+      validator: VALIDATOR,
+      amounts: [{ denom: "uzig", amount: "1000000" }],
+    });
+    expect(alerts[1]).toMatchObject({
+      kind: "withdraw_reward",
+      validator: VALIDATOR2,
+      amounts: [{ denom: "uzig", amount: "2000000" }],
+    });
+  });
+
+  it("ignores reward claims for untracked delegators", () => {
+    const alerts = parse(buildTxBase64([msgs.withdrawReward(OTHER, VALIDATOR)]));
+    expect(alerts).toHaveLength(0);
+  });
+});
+
 describe("general behavior", () => {
   it("skips failed transactions (code !== 0)", () => {
     const alerts = parse(

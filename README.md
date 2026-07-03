@@ -1,8 +1,8 @@
 # ZigChain Staking Monitor
 
 Watches wallets on ZigChain mainnet and sends a Telegram alert for every
-send, IBC transfer, contract call, delegate, undelegate, and redelegate.
-Amounts are in ZIG (1,000,000 uzig = 1 ZIG).
+send, IBC transfer, contract call, delegate, undelegate, redelegate, and
+staking reward claim. Amounts are in ZIG (1,000,000 uzig = 1 ZIG).
 
 ## How it works
 

@@ -9,6 +9,7 @@ import {
   MsgUndelegate,
   MsgBeginRedelegate,
 } from "cosmjs-types/cosmos/staking/v1beta1/tx.js";
+import { MsgWithdrawDelegatorReward } from "cosmjs-types/cosmos/distribution/v1beta1/tx.js";
 import type { Alert, Coin, RawEvent, TxResult } from "./types.js";
 import { parseCoinString } from "./format.js";
 
@@ -34,25 +35,36 @@ export function findAttr(event: RawEvent, key: string): string | undefined {
 }
 
 /**
- * completion_time lives only in raw "unbond"/"redelegate" events, not in the
- * decoded protobuf message. Match by msg_index when present (Cosmos SDK >= 0.46),
- * else fall back to the Nth occurrence of that event type in the tx.
+ * Several message types (undelegate, redelegate, withdraw-reward) carry key
+ * data only in a raw event, not the decoded protobuf message. Match the event
+ * to its message by msg_index when present (Cosmos SDK >= 0.46), else fall
+ * back to the Nth occurrence of that event type in the tx.
  */
+function findEventForMsg(
+  events: RawEvent[],
+  eventType: string,
+  msgIndex: number,
+  occurrence: number,
+): RawEvent | undefined {
+  const matching = events.filter((e) => e.type === eventType);
+  for (const e of matching) {
+    const mi = findAttr(e, "msg_index");
+    if (mi !== undefined && mi !== "" && Number(mi) === msgIndex) return e;
+  }
+  return matching[occurrence] ?? matching[0];
+}
+
 function completionTimeFor(
   events: RawEvent[],
   eventType: "unbond" | "redelegate",
   msgIndex: number,
   occurrence: number,
 ): string | undefined {
-  const matching = events.filter((e) => e.type === eventType);
-  for (const e of matching) {
-    const mi = findAttr(e, "msg_index");
-    if (mi !== undefined && mi !== "" && Number(mi) === msgIndex) {
-      return findAttr(e, "completion_time");
-    }
-  }
-  const fallback = matching[occurrence] ?? matching[0];
-  return fallback ? findAttr(fallback, "completion_time") : undefined;
+  return findAttrOrUndefined(findEventForMsg(events, eventType, msgIndex, occurrence), "completion_time");
+}
+
+function findAttrOrUndefined(event: RawEvent | undefined, key: string): string | undefined {
+  return event ? findAttr(event, key) : undefined;
 }
 
 function contractAction(msgBytes: Uint8Array): string | undefined {
@@ -89,7 +101,7 @@ export function parseTxToAlerts({ txBase64, txResult, height, wallets }: ParseIn
   // transfers already alerted via a decoded MsgSend, keyed from|to|amount —
   // used to dedupe against raw transfer events scanned afterwards
   const seenTransfers = new Set<string>();
-  const occurrences = { unbond: 0, redelegate: 0 };
+  const occurrences = { unbond: 0, redelegate: 0, withdraw_rewards: 0 };
 
   const messages = tx.body?.messages ?? [];
   messages.forEach((anyMsg, msgIndex) => {
@@ -184,6 +196,30 @@ export function parseTxToAlerts({ txBase64, txResult, height, wallets }: ParseIn
             completionTime: completionTimeFor(txResult.events, "redelegate", msgIndex, occurrence),
             height, txHash,
           });
+        }
+        break;
+      }
+
+      case "/cosmos.distribution.v1beta1.MsgWithdrawDelegatorReward": {
+        const msg = MsgWithdrawDelegatorReward.decode(value);
+        const occurrence = occurrences.withdraw_rewards++;
+        if (wallets.has(msg.delegatorAddress)) {
+          const rewardEvent = findEventForMsg(txResult.events, "withdraw_rewards", msgIndex, occurrence);
+          const amounts = parseCoinString(findAttrOrUndefined(rewardEvent, "amount") ?? "");
+          alerts.push({
+            kind: "withdraw_reward", wallet: msg.delegatorAddress,
+            delegator: msg.delegatorAddress, validator: msg.validatorAddress,
+            amounts, height, txHash,
+          });
+
+          // the reward payout is also a raw "transfer" event; suppress the
+          // bottom loop's generic inflow alert for the same coins so a claim
+          // doesn't also fire a duplicate "💰 Inflow Detected"
+          const transferEvent = findEventForMsg(txResult.events, "transfer", msgIndex, occurrence);
+          const sender = findAttrOrUndefined(transferEvent, "sender") ?? "";
+          for (const c of parseCoinString(findAttrOrUndefined(transferEvent, "amount") ?? "")) {
+            seenTransfers.add(`${sender}|${msg.delegatorAddress}|${c.amount}${c.denom}`);
+          }
         }
         break;
       }

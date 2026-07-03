@@ -8,6 +8,7 @@ import {
   MsgUndelegate,
   MsgBeginRedelegate,
 } from "cosmjs-types/cosmos/staking/v1beta1/tx.js";
+import { MsgWithdrawDelegatorReward } from "cosmjs-types/cosmos/distribution/v1beta1/tx.js";
 import type { RawEvent, TxResult } from "../src/types.js";
 
 export const WALLET = "zig1wrje0m0uhmgme77uxh0a4jynd70a8vsee8ksg4";
@@ -99,6 +100,17 @@ export const msgs = {
           validatorSrcAddress: src,
           validatorDstAddress: dst,
           amount: { denom: "uzig", amount },
+        }),
+      ).finish(),
+    };
+  },
+  withdrawReward(delegator: string, validator: string): AnyMsg {
+    return {
+      typeUrl: "/cosmos.distribution.v1beta1.MsgWithdrawDelegatorReward",
+      value: MsgWithdrawDelegatorReward.encode(
+        MsgWithdrawDelegatorReward.fromPartial({
+          delegatorAddress: delegator,
+          validatorAddress: validator,
         }),
       ).finish(),
     };

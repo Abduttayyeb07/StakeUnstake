@@ -98,4 +98,18 @@ describe("formatAlert", () => {
     expect(html).toContain("zigvaloper1vpsw");
     expect(html).toContain("10,000 ZIG");
   });
+
+  it("formats a withdraw_reward alert", () => {
+    const alert: Alert = {
+      ...base,
+      kind: "withdraw_reward",
+      delegator: base.wallet,
+      validator: "zigvaloper18vykgjgcmp2z4xzkt6mh74glrpd7qda8fqldrl",
+      amounts: [{ denom: "uzig", amount: "368006636" }],
+    };
+    const html = formatAlert(alert, "https://www.zigscan.org/tx/");
+    expect(html).toContain("🎁");
+    expect(html).toContain("Rewards Claimed");
+    expect(html).toContain("368.006636 ZIG");
+  });
 });

@@ -72,7 +72,7 @@ export class StakingMonitor {
       for (const q of queries) console.log(`[ws]   ${q}`);
       console.log(
         "[monitor] detecting: MsgDelegate, MsgUndelegate, MsgBeginRedelegate, " +
-          "MsgSend, MsgTransfer (IBC), MsgExecuteContract " +
+          "MsgWithdrawDelegatorReward, MsgSend, MsgTransfer (IBC), MsgExecuteContract " +
           "(every tx in every block is protobuf-decoded; subscriptions are only wake-up signals)",
       );
     });
