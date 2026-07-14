@@ -1,4 +1,10 @@
 import { QueryBalanceRequest, QueryBalanceResponse } from "cosmjs-types/cosmos/bank/v1beta1/query.js";
+import {
+  QueryDelegatorDelegationsRequest,
+  QueryDelegatorDelegationsResponse,
+} from "cosmjs-types/cosmos/staking/v1beta1/query.js";
+import { PageRequest } from "cosmjs-types/cosmos/base/query/v1beta1/pagination.js";
+import { QueryDelegationTotalRewardsRequest, QueryDelegationTotalRewardsResponse } from "cosmjs-types/cosmos/distribution/v1beta1/query.js";
 import type { TxResult } from "./types.js";
 
 interface JsonRpcEnvelope<T> {
@@ -140,20 +146,59 @@ export class RpcClient {
   }
 
   /**
-   * Query a bank module balance through Tendermint's generic abci_query,
-   * so it goes through the same endpoints/failover as everything else
-   * instead of needing a separate LCD/REST dependency.
+   * Run a gRPC-gateway query through Tendermint's generic abci_query, so it
+   * goes through the same endpoints/failover as everything else instead of
+   * needing a separate LCD/REST dependency. Returns the raw response bytes.
    */
-  async getBalance(address: string, denom = "uzig"): Promise<string> {
-    const data = QueryBalanceRequest.encode({ address, denom }).finish();
-    const hex = Buffer.from(data).toString("hex");
+  private async abciQuery(grpcPath: string, requestBytes: Uint8Array): Promise<Uint8Array> {
+    const hex = Buffer.from(requestBytes).toString("hex");
     const result = await this.get<{
       response: { code: number; log?: string; value: string | null };
-    }>(`abci_query?path="/cosmos.bank.v1beta1.Query/Balance"&data=0x${hex}`);
+    }>(`abci_query?path="${grpcPath}"&data=0x${hex}`);
     const { code, log, value } = result.response;
-    if (code !== 0) throw new Error(`abci_query Balance failed: ${log ?? code}`);
-    if (!value) return "0";
-    const decoded = QueryBalanceResponse.decode(Buffer.from(value, "base64"));
-    return decoded.balance?.amount ?? "0";
+    if (code !== 0) throw new Error(`abci_query ${grpcPath} failed: ${log ?? code}`);
+    return value ? Buffer.from(value, "base64") : new Uint8Array();
+  }
+
+  async getBalance(address: string, denom = "uzig"): Promise<string> {
+    const req = QueryBalanceRequest.encode({ address, denom }).finish();
+    const bytes = await this.abciQuery("/cosmos.bank.v1beta1.Query/Balance", req);
+    if (bytes.length === 0) return "0";
+    return QueryBalanceResponse.decode(bytes).balance?.amount ?? "0";
+  }
+
+  /** Sum of all active delegations (uzig) for a wallet, across every validator. */
+  async getTotalDelegation(address: string, denom = "uzig"): Promise<string> {
+    let total = 0n;
+    let key: Uint8Array | undefined;
+    for (;;) {
+      const req = QueryDelegatorDelegationsRequest.encode({
+        delegatorAddr: address,
+        pagination: key ? PageRequest.fromPartial({ key }) : undefined,
+      }).finish();
+      const bytes = await this.abciQuery("/cosmos.staking.v1beta1.Query/DelegatorDelegations", req);
+      if (bytes.length === 0) break;
+      const decoded = QueryDelegatorDelegationsResponse.decode(bytes);
+      for (const d of decoded.delegationResponses) {
+        if (d.balance?.denom === denom) total += BigInt(d.balance.amount);
+      }
+      if (!decoded.pagination?.nextKey?.length) break;
+      key = decoded.pagination.nextKey;
+    }
+    return total.toString();
+  }
+
+  /**
+   * Total unclaimed staking rewards across every validator, as a Cosmos SDK
+   * Dec string (18 decimal places on top of the coin's own decimals — i.e.
+   * this is uzig * 10^18, not uzig). Use formatMicroAmount(raw, 24) to render
+   * it as ZIG.
+   */
+  async getTotalRewards(address: string, denom = "uzig"): Promise<string> {
+    const req = QueryDelegationTotalRewardsRequest.encode({ delegatorAddress: address }).finish();
+    const bytes = await this.abciQuery("/cosmos.distribution.v1beta1.Query/DelegationTotalRewards", req);
+    if (bytes.length === 0) return "0";
+    const decoded = QueryDelegationTotalRewardsResponse.decode(bytes);
+    return decoded.total.find((c) => c.denom === denom)?.amount ?? "0";
   }
 }

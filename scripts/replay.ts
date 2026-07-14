@@ -38,7 +38,7 @@ block.txs.forEach((txBase64, i) => {
   const alerts = parseTxToAlerts({ txBase64, txResult, height, wallets });
   for (const alert of alerts) {
     total++;
-    console.log(formatAlert(alert, config.explorerTxUrl).replace(/<[^>]+>/g, ""));
+    console.log(formatAlert(alert, config.explorerTxUrl, config.walletLabels).replace(/<[^>]+>/g, ""));
     console.log("---");
   }
 });

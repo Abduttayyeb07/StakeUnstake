@@ -6,6 +6,8 @@ import { RpcClient } from "./rpc.js";
 import { ZigWsClient } from "./wsClient.js";
 import { parseTxToAlerts } from "./txParser.js";
 import { formatAlert } from "./alerts.js";
+import { SheetsClient } from "./sheets.js";
+import { DailySnapshotScheduler } from "./dailySnapshot.js";
 import type { Alert } from "./types.js";
 import type { Notifier, WalletBalance } from "./telegram.js";
 
@@ -16,6 +18,7 @@ export class StakingMonitor {
   private readonly backfiller: Backfiller;
   private readonly deduper: AlertDeduper;
   private readonly wallets: Set<string>;
+  private readonly snapshotScheduler: DailySnapshotScheduler | null;
   private pollTimer: NodeJS.Timeout | null = null;
   private backfillTimer: NodeJS.Timeout | null = null;
 
@@ -27,6 +30,15 @@ export class StakingMonitor {
     this.rpc = new RpcClient(config.rpcUrls);
     this.ws = new ZigWsClient(config.wsUrls, config.wallets);
     this.deduper = new AlertDeduper(config.dedupeFile);
+    this.snapshotScheduler = config.googleCredentialsPath
+      ? new DailySnapshotScheduler({
+          rpc: this.rpc,
+          sheets: new SheetsClient(config.googleCredentialsPath, config.googleSpreadsheetId),
+          walletLabels: config.walletLabels,
+          stZigDenom: config.stZigDenom,
+          stateFile: config.snapshotStateFile,
+        })
+      : null;
     this.processor = new BlockProcessor({
       rpc: this.rpc,
       stateFile: config.stateFile,
@@ -56,7 +68,7 @@ export class StakingMonitor {
     } else {
       console.log(`[monitor] ${alert.kind} at block ${alert.height} (tx ${alert.txHash.slice(0, 12)}...)`);
     }
-    await this.notifier.broadcast(formatAlert(alert, this.config.explorerTxUrl));
+    await this.notifier.broadcast(formatAlert(alert, this.config.explorerTxUrl, this.config.walletLabels));
   }
 
   async start(): Promise<void> {
@@ -64,7 +76,10 @@ export class StakingMonitor {
     this.processor.init(latest);
     this.backfiller.init(this.processor.checkpoint);
     console.log(`[monitor] chain is at block ${latest}`);
-    console.log(`[monitor] watching ${this.wallets.size} wallet(s): ${[...this.wallets].join(", ")}`);
+    const walletList = [...this.wallets]
+      .map((w) => (this.config.walletLabels[w] ? `${this.config.walletLabels[w]} (${w})` : w))
+      .join(", ");
+    console.log(`[monitor] watching ${this.wallets.size} wallet(s): ${walletList}`);
 
     this.ws.on("connected", (url: string) => console.log(`[ws] connected to ${url}`));
     this.ws.on("subscribed", (queries: string[]) => {
@@ -100,6 +115,12 @@ export class StakingMonitor {
       void this.backfiller.sweep(this.processor.checkpoint);
     }, this.config.backfillIntervalMs);
 
+    if (this.snapshotScheduler) {
+      this.snapshotScheduler.init();
+      this.snapshotScheduler.start();
+      console.log("[snapshot] daily Google Sheets snapshot scheduled for 00:00 PKT");
+    }
+
     // periodic heartbeat so the logs always show where live monitoring is
     setInterval(() => {
       console.log(
@@ -111,10 +132,11 @@ export class StakingMonitor {
   async getBalances(): Promise<WalletBalance[]> {
     return Promise.all(
       [...this.wallets].map(async (wallet): Promise<WalletBalance> => {
+        const label = this.config.walletLabels[wallet];
         try {
-          return { wallet, amount: await this.rpc.getBalance(wallet) };
+          return { wallet, label, amount: await this.rpc.getBalance(wallet) };
         } catch (e) {
-          return { wallet, amount: { error: `lookup failed: ${String(e)}` } };
+          return { wallet, label, amount: { error: `lookup failed: ${String(e)}` } };
         }
       }),
     );
@@ -123,6 +145,7 @@ export class StakingMonitor {
   stop(): void {
     if (this.pollTimer) clearInterval(this.pollTimer);
     if (this.backfillTimer) clearInterval(this.backfillTimer);
+    this.snapshotScheduler?.stop();
     this.ws.close();
   }
 }

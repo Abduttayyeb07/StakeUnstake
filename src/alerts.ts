@@ -7,8 +7,15 @@ import {
   shortenAddress,
 } from "./format.js";
 
-export function formatAlert(alert: Alert, explorerTxUrl: string): string {
-  const walletLabel = escapeHtml(shortenAddress(alert.wallet));
+export function formatAlert(
+  alert: Alert,
+  explorerTxUrl: string,
+  walletLabels: Record<string, string> = {},
+): string {
+  const name = walletLabels[alert.wallet];
+  const walletLabel = name
+    ? `${escapeHtml(name)} (<code>${escapeHtml(shortenAddress(alert.wallet))}</code>)`
+    : escapeHtml(shortenAddress(alert.wallet));
   const txLink = `${explorerTxUrl}${alert.txHash}`;
   const footer = `\nTx: ${txLink}\nBlock: ${alert.height}`;
 

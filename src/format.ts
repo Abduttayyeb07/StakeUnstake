@@ -15,6 +15,19 @@ export function formatMicroAmount(amount: string, decimals = 6): string {
   return (neg ? "-" : "") + intWithCommas + (fracPart ? "." + fracPart : "");
 }
 
+/**
+ * Cosmos SDK distribution rewards are a "Dec" (18 fixed decimal places on
+ * top of the coin's own decimals) — e.g. getTotalRewards() returns uzig*10^18.
+ * Truncate the Dec precision down to plain uzig, then format as ZIG the same
+ * way as every other amount in the bot (6 decimal places).
+ */
+export function formatRewardAmount(decUzig: string): string {
+  const neg = decUzig.startsWith("-");
+  const digits = decUzig.replace(/\D/g, "") || "0";
+  const uzig = BigInt(digits) / 10n ** 18n;
+  return formatMicroAmount((neg ? "-" : "") + uzig.toString());
+}
+
 export function formatCoin(coin: Coin): string {
   if (coin.denom === "uzig") return `${formatMicroAmount(coin.amount)} ZIG`;
   return `${coin.amount} ${coin.denom}`;

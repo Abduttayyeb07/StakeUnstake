@@ -3,6 +3,7 @@ import {
   formatCoin,
   formatCompletionTime,
   formatMicroAmount,
+  formatRewardAmount,
   parseCoinString,
 } from "../src/format.js";
 import { formatAlert } from "../src/alerts.js";
@@ -15,6 +16,16 @@ describe("formatMicroAmount", () => {
     expect(formatMicroAmount("1")).toBe("0.000001");
     expect(formatMicroAmount("0")).toBe("0");
     expect(formatMicroAmount("1000000")).toBe("1");
+  });
+});
+
+describe("formatRewardAmount", () => {
+  it("truncates a Cosmos SDK Dec (uzig * 10^18) down to 6-decimal ZIG", () => {
+    // real value from ZigChain: 3819.793475... ZIG pending rewards
+    expect(formatRewardAmount("3819793475364130204838114498")).toBe("3,819.793475");
+  });
+  it("returns 0 for no rewards", () => {
+    expect(formatRewardAmount("0")).toBe("0");
   });
 });
 
@@ -111,5 +122,30 @@ describe("formatAlert", () => {
     expect(html).toContain("🎁");
     expect(html).toContain("Rewards Claimed");
     expect(html).toContain("368.006636 ZIG");
+  });
+
+  it("shows a wallet's label alongside its shortened address when one is configured", () => {
+    const alert: Alert = {
+      ...base,
+      kind: "delegate",
+      delegator: base.wallet,
+      validator: "zigvaloper15pw",
+      amount: { denom: "uzig", amount: "4000000000" },
+    };
+    const html = formatAlert(alert, "https://www.zigscan.org/tx/", { [base.wallet]: "Deal 1" });
+    expect(html).toContain("Deal 1");
+    expect(html).toContain(base.wallet.slice(0, 9));
+  });
+
+  it("falls back to just the shortened address when no label is configured", () => {
+    const alert: Alert = {
+      ...base,
+      kind: "delegate",
+      delegator: base.wallet,
+      validator: "zigvaloper15pw",
+      amount: { denom: "uzig", amount: "4000000000" },
+    };
+    const html = formatAlert(alert, "https://www.zigscan.org/tx/");
+    expect(html).not.toContain("Deal 1");
   });
 });

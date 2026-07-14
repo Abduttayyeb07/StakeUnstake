@@ -8,15 +8,18 @@ export interface Notifier {
 
 export interface WalletBalance {
   wallet: string;
+  /** display name, e.g. "Deal 1", if the wallet was given as "Name:address" */
+  label?: string;
   /** uzig amount, or an error message if the query failed */
   amount: string | { error: string };
 }
 
 function formatBalances(balances: WalletBalance[]): string {
-  const lines = balances.map(({ wallet, amount }) => {
-    const label = escapeHtml(shortenAddress(wallet));
-    if (typeof amount !== "string") return `${label}: <i>${escapeHtml(amount.error)}</i>`;
-    return `${label}: <b>${escapeHtml(formatMicroAmount(amount))} ZIG</b>`;
+  const lines = balances.map(({ wallet, label, amount }) => {
+    const addr = escapeHtml(shortenAddress(wallet));
+    const heading = label ? `${escapeHtml(label)} (<code>${addr}</code>)` : `<code>${addr}</code>`;
+    if (typeof amount !== "string") return `${heading}: <i>${escapeHtml(amount.error)}</i>`;
+    return `${heading}: <b>${escapeHtml(formatMicroAmount(amount))} ZIG</b>`;
   });
   return `💼 <b>Wallet Balances</b>\n${lines.join("\n")}`;
 }

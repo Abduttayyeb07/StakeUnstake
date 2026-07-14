@@ -4,13 +4,22 @@ services:
     container_name: zigchain-monitor
     restart: unless-stopped
     env_file: .env
-    # force persistence into the mounted /data volume regardless of what
+    # Force persistence into the mounted /data volume regardless of what
     # STATE_FILE/BACKFILL_STATE_FILE/DEDUPE_FILE/SUBSCRIBERS_FILE are set to
-    # in .env — the container runs as non-root and /app is read-only for it
+    # in .env - the container runs as non-root and /app is read-only for it.
     environment:
       STATE_FILE: /data/state.json
       BACKFILL_STATE_FILE: /data/backfill-state.json
       DEDUPE_FILE: /data/alerts-seen.json
       SUBSCRIBERS_FILE: /data/subscribers.json
+      SNAPSHOT_STATE_FILE: /data/snapshot-state.json
+      # The Google service-account key is bind-mounted below (not in the
+      # image); this must match the mount's container-side path, not
+      # whatever GOOGLE_CREDENTIALS_PATH says in .env.
+      GOOGLE_CREDENTIALS_PATH: /app/credentials.json
     volumes:
       - ./data:/data
+      # Google Sheets logging: the key file must exist at this exact host
+      # path before "docker compose up" - see README "Google Sheets"
+      # section. If you don't want Sheets logging, comment this line out.
+      - ./fit-sanctum-478115-c1-828f08dbfbde.json:/app/credentials.json:ro
