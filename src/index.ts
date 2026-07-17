@@ -4,6 +4,7 @@ import { StakingMonitor } from "./monitor.js";
 import { EthMonitor } from "./eth/monitor.js";
 import { EthDailySnapshotScheduler } from "./eth/dailySnapshot.js";
 import { SheetsClient } from "./sheets.js";
+import { formatTransferAlert } from "./eth/alerts.js";
 import { ConsoleNotifier, TelegramNotifier, type Notifier, type WalletBalance } from "./telegram.js";
 
 const MAX_VERIFY_RANGE = 10;
@@ -77,11 +78,18 @@ async function main(): Promise<void> {
         }
         await ctx.reply(`Re-scanning blocks ${fromBlock}-${toBlock}...`);
         try {
-          const count = await ethMonitor!.verifyRange(fromBlock, toBlock);
+          const results = await ethMonitor!.verifyRange(fromBlock, toBlock);
+          // Private reply only — never notifier.broadcast(), so /verify never
+          // spams every subscriber, only the chat that ran the command.
+          for (const { alert, isNew } of results) {
+            await ctx.replyWithHTML(formatTransferAlert(alert, ethConfig, !isNew));
+          }
+          const newCount = results.filter((r) => r.isNew).length;
+          const oldCount = results.length - newCount;
           await ctx.reply(
-            count > 0
-              ? `Done — ${count} new alert(s) sent.`
-              : "Done — no new transfers found in that range.",
+            results.length === 0
+              ? "Done — no transfers found in that range."
+              : `Done — ${newCount} new, ${oldCount} already known.`,
           );
         } catch (e) {
           await ctx.reply(`Verify failed: ${String(e)}`);

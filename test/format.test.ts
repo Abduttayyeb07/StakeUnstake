@@ -4,6 +4,7 @@ import {
   formatCompletionTime,
   formatMicroAmount,
   formatRewardAmount,
+  formatTokenAmount,
   parseCoinString,
 } from "../src/format.js";
 import { formatAlert } from "../src/alerts.js";
@@ -26,6 +27,23 @@ describe("formatRewardAmount", () => {
   });
   it("returns 0 for no rewards", () => {
     expect(formatRewardAmount("0")).toBe("0");
+  });
+});
+
+describe("formatTokenAmount", () => {
+  it("truncates an 18-decimal ERC-20 amount down to 6-decimal display", () => {
+    // real value from the ETH ZIG wallet: was showing all 18 raw decimals
+    expect(formatTokenAmount("2323424039553268290531485", 18)).toBe("2,323,424.039553");
+  });
+  it("does not round up — truncates only", () => {
+    // .0000009999... at 6dp should truncate to .000000 -> trimmed to whole number
+    expect(formatTokenAmount("1000000999999999999", 18)).toBe("1");
+  });
+  it("passes through unchanged when sourceDecimals <= displayDecimals", () => {
+    expect(formatTokenAmount("9347527752", 6)).toBe("9,347.527752");
+  });
+  it("handles negative amounts", () => {
+    expect(formatTokenAmount("-2323424039553268290531485", 18)).toBe("-2,323,424.039553");
   });
 });
 

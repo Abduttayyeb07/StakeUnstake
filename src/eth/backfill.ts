@@ -110,10 +110,12 @@ export class EthBackfiller {
   }
 
   /**
-   * Also used directly by the /verify Telegram command for manual re-scans.
-   * Returns how many genuinely new (non-deduped) alerts were dispatched.
+   * Pure range scan — fetches + decodes matching transfers with no dispatch
+   * side effect, so callers decide themselves what to do with the results
+   * (background polling dispatches+broadcasts each one; /verify inspects
+   * them privately instead, see EthMonitor.verifyRange).
    */
-  async processRange(from: number, to: number): Promise<number> {
+  async scanRange(from: number, to: number): Promise<TransferAlert[]> {
     const { rpc, config } = this.opts;
     const walletTopics = config.wallets.map(addressTopic);
 
@@ -133,14 +135,24 @@ export class EthBackfiller {
     ]);
 
     const seenInBatch = new Set<string>();
-    let dispatched = 0;
+    const alerts: TransferAlert[] = [];
     for (const log of [...outgoing, ...incoming]) {
       const key = `${log.transactionHash}:${log.index}`;
       if (seenInBatch.has(key)) continue; // a wallet-to-wallet transfer between two watched wallets
       seenInBatch.add(key);
 
       const alert = logToAlert(log, config);
-      if (alert && (await this.opts.dispatch(alert))) dispatched++;
+      if (alert) alerts.push(alert);
+    }
+    return alerts;
+  }
+
+  /** Used by the background poll loop — scans then dispatches+broadcasts each new alert. */
+  async processRange(from: number, to: number): Promise<number> {
+    const alerts = await this.scanRange(from, to);
+    let dispatched = 0;
+    for (const alert of alerts) {
+      if (await this.opts.dispatch(alert)) dispatched++;
     }
     return dispatched;
   }

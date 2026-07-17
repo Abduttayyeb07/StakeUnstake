@@ -1,4 +1,4 @@
-import { formatMicroAmount } from "../format.js";
+import { formatTokenAmount } from "../format.js";
 import type { EthConfig } from "../ethConfig.js";
 import type { Notifier, WalletBalance } from "../telegram.js";
 import { FallbackRpcProvider } from "./rpcProvider.js";
@@ -77,9 +77,23 @@ export class EthMonitor {
     this.backfiller.stop();
   }
 
-  /** Manual re-scan for the /verify command — range-limited by the caller. Returns new-alert count. */
-  async verifyRange(fromBlock: number, toBlock: number): Promise<number> {
-    return this.backfiller.processRange(fromBlock, toBlock);
+  /**
+   * Manual re-scan for the /verify command. Unlike the background paths,
+   * this never calls notifier.broadcast() — the caller (the /verify command
+   * handler) is responsible for replying privately to whoever ran it. Each
+   * result is tagged `isNew: false` if it was already alerted before (a
+   * dedupe hit), so the caller can label it as a known/historical tx rather
+   * than presenting it as a fresh alert.
+   */
+  async verifyRange(
+    fromBlock: number,
+    toBlock: number,
+  ): Promise<Array<{ alert: TransferAlert; isNew: boolean }>> {
+    const alerts = await this.backfiller.scanRange(fromBlock, toBlock);
+    return alerts.map((alert) => ({
+      alert,
+      isNew: this.deduper.markSeen(alert.txHash, alert.logIndex),
+    }));
   }
 
   get latestCheckpoint(): number {
@@ -92,7 +106,7 @@ export class EthMonitor {
         const label = this.config.walletLabels[wallet];
         try {
           const raw = await getTokenBalance(this.rpc, this.config.tokenAddress, wallet);
-          const formatted = `${formatMicroAmount(raw, this.config.tokenDecimals)} ${this.config.tokenSymbol}`;
+          const formatted = `${formatTokenAmount(raw, this.config.tokenDecimals)} ${this.config.tokenSymbol}`;
           return { wallet, label, amount: raw, formatted };
         } catch (e) {
           return { wallet, label, amount: { error: `lookup failed: ${String(e)}` } };

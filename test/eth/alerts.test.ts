@@ -48,4 +48,28 @@ describe("formatTransferAlert", () => {
     expect(html).toContain("Outflow Detected");
     expect(html).toContain("1 ZIG");
   });
+
+  it("marks a historical (/verify re-hit) alert distinctly from a fresh one", () => {
+    const alert: TransferAlert = {
+      direction: "in",
+      wallet: WALLET1,
+      walletLabel: "Deal 1 (eth)",
+      from: OTHER,
+      to: WALLET1,
+      amount: "1000000000000000000",
+      txHash: "0x" + "ef".repeat(32),
+      logIndex: 0,
+      blockNumber: 20_000_002,
+    };
+    const fresh = formatTransferAlert(alert, config, false);
+    const historical = formatTransferAlert(alert, config, true);
+
+    expect(fresh).toContain("Inflow Detected");
+    expect(fresh).not.toContain("Already Alerted");
+
+    expect(historical).toContain("📋");
+    expect(historical).toContain("Already Alerted");
+    expect(historical).toContain("Direction: Inflow");
+    expect(historical).not.toBe(fresh);
+  });
 });

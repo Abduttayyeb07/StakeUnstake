@@ -28,6 +28,20 @@ export function formatRewardAmount(decUzig: string): string {
   return formatMicroAmount((neg ? "-" : "") + uzig.toString());
 }
 
+/**
+ * Formats a base-unit token amount for display, truncating (not rounding)
+ * down to `displayDecimals` — e.g. an 18-decimal ERC-20 amount shown at the
+ * same 6-decimal precision as everything else in the bot, instead of
+ * "2,323,424.039553268290531485" dragging along 18 raw decimal places.
+ */
+export function formatTokenAmount(raw: string, sourceDecimals: number, displayDecimals = 6): string {
+  if (sourceDecimals <= displayDecimals) return formatMicroAmount(raw, sourceDecimals);
+  const neg = raw.startsWith("-");
+  const digits = raw.replace(/\D/g, "") || "0";
+  const truncated = BigInt(digits) / 10n ** BigInt(sourceDecimals - displayDecimals);
+  return formatMicroAmount((neg ? "-" : "") + truncated.toString(), displayDecimals);
+}
+
 export function formatCoin(coin: Coin): string {
   if (coin.denom === "uzig") return `${formatMicroAmount(coin.amount)} ZIG`;
   return `${coin.amount} ${coin.denom}`;

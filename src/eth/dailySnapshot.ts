@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { pktDateString, nextPktMidnight } from "../dailySnapshot.js";
-import { formatMicroAmount } from "../format.js";
+import { formatTokenAmount } from "../format.js";
 import type { SheetsClient } from "../sheets.js";
 import type { FallbackRpcProvider } from "./rpcProvider.js";
 import { getTokenBalance } from "./balance.js";
@@ -72,7 +72,7 @@ export class EthDailySnapshotScheduler {
     for (const [address, sheetName] of entries) {
       try {
         const raw = await getTokenBalance(this.opts.rpc, this.opts.config.tokenAddress, address);
-        const balance = `${formatMicroAmount(raw, this.opts.config.tokenDecimals)} ${this.opts.config.tokenSymbol}`;
+        const balance = `${formatTokenAmount(raw, this.opts.config.tokenDecimals)} ${this.opts.config.tokenSymbol}`;
         await this.opts.sheets.appendValues(sheetName, "A:C", [address, reportDate, balance]);
         this.log(`[eth-snapshot] logged ${sheetName} (${address}) for ${reportDate}`);
       } catch (e) {
