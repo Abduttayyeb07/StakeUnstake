@@ -4,6 +4,8 @@ import { escapeHtml, formatMicroAmount, shortenAddress } from "./format.js";
 
 export interface Notifier {
   broadcast(html: string): Promise<void>;
+  /** Operational/health messages (reconnects, stale connections, ...) — private, not broadcast to every subscriber. */
+  notifyAdmin(html: string): Promise<void>;
 }
 
 export interface WalletBalance {
@@ -12,14 +14,16 @@ export interface WalletBalance {
   label?: string;
   /** uzig amount, or an error message if the query failed */
   amount: string | { error: string };
+  /** pre-formatted display string (e.g. "1,234.5 ZIG"), overrides the default uzig-based formatting — used for non-Cosmos chains */
+  formatted?: string;
 }
 
 function formatBalances(balances: WalletBalance[]): string {
-  const lines = balances.map(({ wallet, label, amount }) => {
+  const lines = balances.map(({ wallet, label, amount, formatted }) => {
     const addr = escapeHtml(shortenAddress(wallet));
     const heading = label ? `${escapeHtml(label)} (<code>${addr}</code>)` : `<code>${addr}</code>`;
     if (typeof amount !== "string") return `${heading}: <i>${escapeHtml(amount.error)}</i>`;
-    return `${heading}: <b>${escapeHtml(formatMicroAmount(amount))} ZIG</b>`;
+    return `${heading}: <b>${escapeHtml(formatted ?? `${formatMicroAmount(amount)} ZIG`)}</b>`;
   });
   return `💼 <b>Wallet Balances</b>\n${lines.join("\n")}`;
 }
@@ -29,6 +33,11 @@ export class ConsoleNotifier implements Notifier {
   async broadcast(html: string): Promise<void> {
     const text = html.replace(/<[^>]+>/g, "");
     console.log(`\n=== ALERT ===\n${text}\n=============`);
+  }
+
+  async notifyAdmin(html: string): Promise<void> {
+    const text = html.replace(/<[^>]+>/g, "");
+    console.log(`\n=== ADMIN ===\n${text}\n=============`);
   }
 }
 
@@ -41,6 +50,8 @@ export class TelegramNotifier implements Notifier {
     seedChatIds: string[],
     private readonly subscribersFile: string,
     private readonly getBalances?: () => Promise<WalletBalance[]>,
+    /** Chat id for operational/health messages (reconnects, stale connections, ...) — private, not the broadcast list. */
+    private readonly adminChatId?: string,
   ) {
     this.bot = new Telegraf(token);
     for (const id of seedChatIds) this.subscribers.add(id);
@@ -66,6 +77,11 @@ export class TelegramNotifier implements Notifier {
     });
   }
 
+  /** Lets other monitors (e.g. the ETH one) register their own commands on the same bot/token. */
+  registerCommand(name: string, handler: Parameters<Telegraf["command"]>[1]): void {
+    this.bot.command(name, handler);
+  }
+
   async start(): Promise<void> {
     // launch() resolves only when the bot stops; don't await it
     void this.bot.launch();
@@ -87,6 +103,18 @@ export class TelegramNotifier implements Notifier {
         }),
     );
     await Promise.all(sends);
+  }
+
+  async notifyAdmin(html: string): Promise<void> {
+    if (!this.adminChatId) return; // no ADMIN_CHAT_ID configured — silently skip, not broadcast
+    await this.bot.telegram
+      .sendMessage(this.adminChatId, html, {
+        parse_mode: "HTML",
+        link_preview_options: { is_disabled: true },
+      })
+      .catch((e: unknown) => {
+        console.error(`[telegram] admin notify to ${this.adminChatId} failed: ${String(e)}`);
+      });
   }
 
   private loadSubscribers(): void {

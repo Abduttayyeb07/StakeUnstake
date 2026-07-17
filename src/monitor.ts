@@ -91,10 +91,16 @@ export class StakingMonitor {
           "(every tx in every block is protobuf-decoded; subscriptions are only wake-up signals)",
       );
     });
-    this.ws.on("stale", () => console.warn("[ws] connection stale, forcing reconnect"));
-    this.ws.on("reconnecting", (delay: number, url: string) =>
-      console.warn(`[ws] reconnecting to ${url} in ${delay}ms`),
-    );
+    this.ws.on("stale", () => {
+      console.warn("[ws] connection stale, forcing reconnect");
+      void this.notifier.notifyAdmin("⚠️ <b>ZigChain WS stale</b> — forcing reconnect.");
+    });
+    this.ws.on("reconnecting", (delay: number, url: string) => {
+      console.warn(`[ws] reconnecting to ${url} in ${delay}ms`);
+      void this.notifier.notifyAdmin(
+        `🔄 <b>ZigChain WS reconnecting</b>\nEndpoint: <code>${url}</code>\nIn: ${delay}ms`,
+      );
+    });
     this.ws.on("error", (err: Error) => console.error(`[ws] error: ${err.message}`));
     this.ws.on("height", (height: number) => {
       console.log(`[ws] tracked wallet tx in block ${height}`);

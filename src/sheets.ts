@@ -30,16 +30,24 @@ export class SheetsClient {
   }
 
   async appendRow(sheetName: string, row: SnapshotRow): Promise<void> {
+    await this.appendValues(sheetName, "A:F", [
+      row.address,
+      row.day,
+      row.zigBalance,
+      row.stZigBalance,
+      row.delegation,
+      row.dailyRewards,
+    ]);
+  }
+
+  /** For sheets with fewer columns, e.g. an Address/Day/Balance-only tab. */
+  async appendValues(sheetName: string, columnRange: string, values: (string | number)[]): Promise<void> {
     await this.api.spreadsheets.values.append({
       spreadsheetId: this.spreadsheetId,
-      range: `${sheetName}!A:F`,
+      range: `${sheetName}!${columnRange}`,
       valueInputOption: "USER_ENTERED",
       insertDataOption: "INSERT_ROWS",
-      requestBody: {
-        values: [
-          [row.address, row.day, row.zigBalance, row.stZigBalance, row.delegation, row.dailyRewards],
-        ],
-      },
+      requestBody: { values: [values] },
     });
   }
 }

@@ -13,6 +13,8 @@ services:
       DEDUPE_FILE: /data/alerts-seen.json
       SUBSCRIBERS_FILE: /data/subscribers.json
       SNAPSHOT_STATE_FILE: /data/snapshot-state.json
+      ETH_STATE_FILE: /data/eth-state.json
+      ETH_SNAPSHOT_STATE_FILE: /data/eth-snapshot-state.json
       # The Google service-account key is bind-mounted below (not in the
       # image); this must match the mount's container-side path, not
       # whatever GOOGLE_CREDENTIALS_PATH says in .env.

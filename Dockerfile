@@ -26,6 +26,8 @@ ENV BACKFILL_STATE_FILE=/data/backfill-state.json
 ENV DEDUPE_FILE=/data/alerts-seen.json
 ENV SUBSCRIBERS_FILE=/data/subscribers.json
 ENV SNAPSHOT_STATE_FILE=/data/snapshot-state.json
+ENV ETH_STATE_FILE=/data/eth-state.json
+ENV ETH_SNAPSHOT_STATE_FILE=/data/eth-snapshot-state.json
 VOLUME /data
 
 # container starts as root so the entrypoint can chown the (host-owned)

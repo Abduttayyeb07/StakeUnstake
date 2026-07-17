@@ -4,7 +4,9 @@ Watches wallets on ZigChain mainnet and sends a Telegram alert for every
 send, IBC transfer, contract call, delegate, undelegate, redelegate, and
 staking reward claim. Amounts are in ZIG (1,000,000 uzig = 1 ZIG). Optionally
 also logs a daily balance/delegation/rewards snapshot to Google Sheets at
-midnight PKT — see "Google Sheets" below.
+midnight PKT — see "Google Sheets" below. Can also watch Ethereum-mainnet
+wallets for bridged ZIG ERC-20 transfers on the same bot — see "Ethereum
+ZIG-token monitor" below.
 
 ## How it works
 
@@ -79,6 +81,7 @@ read `balance.amount` (uzig), then formatted the same way as everywhere else
 | `WS_URL` | zigscan + wickhub fallback | comma-separated; each reconnect rotates to the next endpoint |
 | `TELEGRAM_BOT_TOKEN` | _(empty = console mode)_ | |
 | `TELEGRAM_CHAT_ID` | _(empty)_ | always-alerted chat ids, comma-separated |
+| `ADMIN_CHAT_ID` | _(empty = disabled)_ | private chat id for WS reconnect/stale warnings — never sent to `TELEGRAM_CHAT_ID` |
 | `POLL_INTERVAL_MS` | `10000` | polling fallback interval |
 | `GOOGLE_CREDENTIALS_PATH` | _(empty = disabled)_ | path to a Google service-account JSON key; see "Google Sheets" below |
 | `GOOGLE_SPREADSHEET_ID` | the Deal 1/Deal 2 sheet | full URL or bare spreadsheet id |
@@ -108,3 +111,43 @@ failure can never delay or affect Telegram alerts.
 2. Share the spreadsheet with the service account's `client_email` (found in the JSON key) as **Editor**.
 3. Set `GOOGLE_CREDENTIALS_PATH` to that file's path in `.env`.
 4. Make sure each labeled wallet has a matching sheet tab (`Deal 1`, `Deal 2`, ...) with the 6 columns above, in order.
+
+## Ethereum ZIG-token monitor (separate chain, same bot)
+
+Alongside the ZigChain-native monitor above, the bot can also watch wallets
+on **Ethereum mainnet** for transfers of the bridged ZIG ERC-20 token, and
+reuses the same Telegram bot/token — no second bot needed.
+
+- **Contract**: `0xb2617246d0c6c0087f18703d576831899ca94f01` ("ZigCoin", verified
+  live on-chain — the `decimals()`/`symbol()` calls return `18`/`"ZIG"` directly
+  from the contract, not assumed).
+- **Detection**: a WebSocket subscription to every `Transfer` event on that
+  contract (matched client-side against `WATCHED_WALLETS`), plus an HTTP
+  `eth_getLogs` polling loop every `ETH_POLL_INTERVAL_MS` as a safety net —
+  same dual-path design as the Cosmos side. Both paths share one in-memory
+  `txHash:logIndex` dedupe set, so a transfer is never alerted twice.
+- **RPC failover**: `ETH_RPC_URLS`/`ETH_WS_URLS` are comma-separated lists;
+  requests retry across every endpoint in order (public RPCs sometimes reject
+  `eth_getLogs` over older ranges with a 403 "archive node" error — failover
+  routes around that automatically).
+- **Reorg safety**: `CONFIRMATIONS` holds the HTTP backfill back that many
+  blocks behind the chain tip before scanning.
+- **Daily snapshot**: same 00:00 PKT job as the Cosmos side, but only 3
+  columns (Address, Day, Balance) in a tab named after the wallet's
+  `WATCHED_WALLETS` label, e.g. `Deal 1 (eth)`.
+- **Telegram**: `/balances` includes ETH wallets alongside Cosmos ones;
+  `/verify <fromBlock> [toBlock]` (range ≤ 10 blocks) manually re-scans a
+  block range and reports how many new transfers it found.
+
+| Var | Default | Notes |
+| --- | --- | --- |
+| `WATCHED_WALLETS` | _(empty = disabled)_ | `Label=0xAddress`, comma-separated; empty disables the whole ETH monitor |
+| `ETH_RPC_URLS` / `ETH_WS_URLS` | _(empty)_ | comma-separated, first is primary |
+| `ZIG_TOKEN_ADDRESS` | verified ZigCoin contract | don't change unless the protocol issues a new contract |
+| `TOKEN_SYMBOL` / `TOKEN_DECIMALS` | `ZIG` / `18` | verified live from the contract |
+| `MIN_ALERT_AMOUNT` | `0` | suppress alerts below this token amount |
+| `ALERT_INCOMING` / `ALERT_OUTGOING` | `true` / `true` | toggle each direction independently |
+| `CONFIRMATIONS` | `1` | blocks held back from the tip before scanning |
+| `MAX_BLOCK_RANGE` | `2000` | `eth_getLogs` chunk size |
+| `MAX_BACKLOG_BLOCKS` | `50000` | cap on first-boot catch-up if there's no persisted state |
+| `ETH_JUMP_TO_TIP_ON_BOOT` | `false` | `true` skips catch-up entirely and starts from the current tip |

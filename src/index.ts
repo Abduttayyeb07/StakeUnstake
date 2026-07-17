@@ -1,21 +1,39 @@
 import { loadConfig } from "./config.js";
+import { loadEthConfig } from "./ethConfig.js";
 import { StakingMonitor } from "./monitor.js";
-import { ConsoleNotifier, TelegramNotifier, type Notifier } from "./telegram.js";
+import { EthMonitor } from "./eth/monitor.js";
+import { EthDailySnapshotScheduler } from "./eth/dailySnapshot.js";
+import { SheetsClient } from "./sheets.js";
+import { ConsoleNotifier, TelegramNotifier, type Notifier, type WalletBalance } from "./telegram.js";
+
+const MAX_VERIFY_RANGE = 10;
 
 async function main(): Promise<void> {
   const config = loadConfig();
+  const ethConfig = loadEthConfig();
 
   let notifier: Notifier;
   let telegram: TelegramNotifier | null = null;
-  // monitor depends on notifier, but /balances on the bot depends on monitor —
-  // bind the callback to a not-yet-created monitor and fill it in below
+  // monitors depend on notifier, but /balances on the bot depends on the monitors —
+  // bind the callback to not-yet-created monitors and fill them in below
   let monitor: StakingMonitor;
+  let ethMonitor: EthMonitor | null = null;
+
+  const getAllBalances = async (): Promise<WalletBalance[]> => {
+    const results = await Promise.all([
+      monitor.getBalances(),
+      ethMonitor ? ethMonitor.getBalances() : Promise.resolve([]),
+    ]);
+    return results.flat();
+  };
+
   if (config.telegramBotToken) {
     telegram = new TelegramNotifier(
       config.telegramBotToken,
       config.telegramChatIds,
       config.subscribersFile,
-      () => monitor.getBalances(),
+      getAllBalances,
+      config.adminChatId,
     );
     await telegram.start();
     notifier = telegram;
@@ -28,9 +46,55 @@ async function main(): Promise<void> {
   monitor = new StakingMonitor(config, notifier);
   await monitor.start();
 
+  let ethSnapshot: EthDailySnapshotScheduler | null = null;
+  if (ethConfig.enabled) {
+    ethMonitor = new EthMonitor(ethConfig, notifier);
+    await ethMonitor.start();
+
+    if (config.googleCredentialsPath) {
+      ethSnapshot = new EthDailySnapshotScheduler({
+        rpc: ethMonitor.rpc,
+        sheets: new SheetsClient(config.googleCredentialsPath, config.googleSpreadsheetId),
+        config: ethConfig,
+        stateFile: ethConfig.snapshotStateFile,
+      });
+      ethSnapshot.init();
+      ethSnapshot.start();
+      console.log("[eth-snapshot] daily Google Sheets snapshot scheduled for 00:00 PKT");
+    }
+
+    if (telegram) {
+      telegram.registerCommand("verify", async (ctx) => {
+        const text = "text" in ctx.message ? ctx.message.text : "";
+        const [, fromStr, toStr] = text.split(/\s+/);
+        const fromBlock = Number(fromStr);
+        const toBlock = toStr === undefined ? fromBlock : Number(toStr);
+        if (!Number.isInteger(fromBlock) || !Number.isInteger(toBlock) || fromBlock < 0) {
+          return ctx.reply("usage: /verify <fromBlock> [toBlock] (range ≤ 10 blocks)");
+        }
+        if (toBlock < fromBlock || toBlock - fromBlock > MAX_VERIFY_RANGE) {
+          return ctx.reply(`range too large — max ${MAX_VERIFY_RANGE} blocks`);
+        }
+        await ctx.reply(`Re-scanning blocks ${fromBlock}-${toBlock}...`);
+        try {
+          const count = await ethMonitor!.verifyRange(fromBlock, toBlock);
+          await ctx.reply(
+            count > 0
+              ? `Done — ${count} new alert(s) sent.`
+              : "Done — no new transfers found in that range.",
+          );
+        } catch (e) {
+          await ctx.reply(`Verify failed: ${String(e)}`);
+        }
+      });
+    }
+  }
+
   const shutdown = (signal: string) => {
     console.log(`[main] ${signal} received, shutting down`);
     monitor.stop();
+    ethMonitor?.stop();
+    ethSnapshot?.stop();
     telegram?.stop();
     process.exit(0);
   };

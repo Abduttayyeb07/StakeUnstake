@@ -12,6 +12,8 @@ export interface Config {
   telegramBotToken: string;
   /** Chat ids always included in broadcasts, in addition to /start subscribers */
   telegramChatIds: string[];
+  /** Private chat id for operational/health messages (reconnects, stale connections, ...) */
+  adminChatId: string;
   pollIntervalMs: number;
   backfillIntervalMs: number;
   stateFile: string;
@@ -85,6 +87,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean),
+    adminChatId: env.ADMIN_CHAT_ID ?? "",
     pollIntervalMs: Number(env.POLL_INTERVAL_MS ?? 10_000),
     backfillIntervalMs: Number(env.BACKFILL_INTERVAL_MS ?? 300_000),
     stateFile: env.STATE_FILE ?? "state.json",
